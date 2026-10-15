@@ -1,0 +1,9 @@
+langchain>=0.2
+langchain-community
+langchain-text-splitters
+chromadb
+pypdf
+sentence-transformers
+streamlit
+pytest
+python-dotenv
