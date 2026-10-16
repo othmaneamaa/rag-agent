@@ -16,7 +16,7 @@ jobs:
           . .venv/bin/activate
           pip install --upgrade pip
           pip install pytest python-dotenv
-          pip install langchain-core langchain-text-splitters langchain-community pypdf
+          pip install langchain-core langchain-text-splitters langchain-community pypdf groq
 
       - name: Lancer les tests legers
         run: |

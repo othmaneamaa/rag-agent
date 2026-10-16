@@ -5,14 +5,15 @@ import sys
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE))
 
-from rag.embeddings import charger_modele, encoder
-from rag.vector_store import creer_collection, rechercher
-
 
 def chercher(question: str, k: int = 4):
     """Retourne les k passages les plus proches de la question."""
     if not question or not question.strip():
         raise ValueError("question vide")
+
+    # Imports tardifs : évite de charger sentence-transformers au chargement
+    from rag.embeddings import charger_modele, encoder
+    from rag.vector_store import creer_collection, rechercher
 
     modele = charger_modele()
     collection = creer_collection()
