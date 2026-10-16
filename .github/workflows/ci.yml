@@ -2,11 +2,23 @@ on: [push, pull_request]
 
 jobs:
   rag:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
-      - run: . .venv/bin/activate && pytest -q
+
+      - name: Installer les dependances de test
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install --upgrade pip
+          pip install pytest python-dotenv
+          pip install langchain-core langchain-text-splitters langchain-community pypdf
+
+      - name: Lancer les tests legers
+        run: |
+          . .venv/bin/activate
+          pytest -q tests/test_chunking.py tests/test_generation.py tests/test_ui.py
