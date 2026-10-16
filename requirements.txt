@@ -8,4 +8,3 @@ streamlit
 pytest
 python-dotenv
 groq
-python-dotenv
