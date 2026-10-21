@@ -1,4 +1,3 @@
-$readme = @'
 # 🔍 Agent de recherche documentaire (RAG)
 
 Agent capable d'interroger en **langage naturel** un corpus de PDF et de répondre avec des **sources citées**. Basé sur le pattern **RAG** (Retrieval-Augmented Generation).
@@ -17,22 +16,25 @@ Agent capable d'interroger en **langage naturel** un corpus de PDF et de répond
 ---
 
 ## Architecture
+
+```
 Question
-│
-▼
+   │
+   ▼
 Embedding (sentence-transformers/all-MiniLM-L6-v2)
-│
-▼
+   │
+   ▼
 Recherche vectorielle (ChromaDB, top-k, seuil 0.55)
-│
-▼
+   │
+   ▼
 Prompt + extraits
-│
-▼
+   │
+   ▼
 LLM Groq (openai/gpt-oss-120b)
-│
-▼
+   │
+   ▼
 Réponse + citations
+```
 
 | Dossier | Rôle |
 |---------|------|
@@ -66,7 +68,7 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 notepad .env   # renseigner GROQ_API_KEY=gsk_...
 
-
+---
 rag-agent/
 ├── data/
 │   ├── pdfs/                  # corpus (non versionné)
