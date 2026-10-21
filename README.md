@@ -69,6 +69,9 @@ Copy-Item .env.example .env
 notepad .env   # renseigner GROQ_API_KEY=gsk_...
 
 ---
+
+## Structure du depot
+---
 rag-agent/
 ├── data/
 │   ├── pdfs/                  # corpus (non versionné)
@@ -104,3 +107,4 @@ rag-agent/
 ├── requirements.txt
 ├── pytest.ini
 └── README.md
+---
