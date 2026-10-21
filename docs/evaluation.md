@@ -15,6 +15,15 @@ mesurables sur notre projet étudiant.
 
 Avant l'indexation, `rag/chunking.py` ignore les pages non informatives (garde, remerciements, liens LinkedIn, bibliographie). Sur les 158 pages des 5 PDF, **19 pages** ont été ignorées, laissant **139 pages** et **508 passages** indexés (au lieu de 532).
 
+### Seuil de similarité
+
+`src/retrieve.py` filtre les passages dont la distance cosinus dépasse **0.55**. Ce seuil a été calibré sur le corpus :
+- 0.259 (régularisation), 0.394 (Spider-Man), 0.516 (Streamlit) → passages pertinents, conservés ;
+- 0.542 à 0.611 (bruit, malédiction de la profondeur) → filtrés ;
+- > 0.55 pour une question hors corpus (capitale du Japon) → **aucun passage**, donc refus déterministe sans appel LLM.
+
+Ce seuil évite d'envoyer au LLM des passages hors sujet, et rend le refus hors corpus **déterministe** (ce n'est plus le LLM qui décide, c'est le code).
+
 ### Test 1 — Question sur un document spécifique
 
 - **Question** : « Qu'est-ce que la régularisation ? »
@@ -38,6 +47,11 @@ Avant l'indexation, `rag/chunking.py` ignore les pages non informatives (garde, 
 - **Question** : « Qu'est-ce que le RAG ? »
 - **Résultat** : le LLM refuse explicitement de répondre (« La réponse ne se trouve pas dans les extraits fournis »), en citant les extraits consultés.
 - **Verdict** : ✅ pas d'hallucination, même avec 4 passages hors sujet en contexte.
+### Test 5 — Question hors corpus (avec seuil)
+
+- **Question** : « Quelle est la capitale du Japon ? »
+- **Résultat** : **0 passage** sous le seuil, `generate.py` répond « Aucun document pertinent trouvé » **sans appeler le LLM**.
+- **Verdict** : ✅ refus déterministe, pas d'hallucination, économie d'appel LLM.
 
 ### Conclusion
 

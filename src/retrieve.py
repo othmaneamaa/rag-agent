@@ -5,9 +5,14 @@ import sys
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE))
 
+# Seuil de distance cosinus : au-delà, le passage est considéré comme hors sujet.
+# Mesuré sur le corpus : 0.259 (régularisation), 0.394 (Spider-Man), 0.516 (Streamlit),
+# 0.55 à 0.61 pour du bruit. On coupe à 0.55.
+SEUIL_DISTANCE = 0.55
+
 
 def chercher(question: str, k: int = 4):
-    """Retourne les k passages les plus proches de la question."""
+    """Retourne les k passages les plus proches de la question, filtrés par le seuil."""
     if not question or not question.strip():
         raise ValueError("question vide")
 
@@ -26,11 +31,14 @@ def chercher(question: str, k: int = 4):
         resultats["metadatas"][0],
         resultats["distances"][0],
     ):
+        distance = float(dist)
+        if distance > SEUIL_DISTANCE:
+            continue
         passages.append({
             "texte": doc,
             "source": meta.get("source", "inconnu"),
             "page": meta.get("page", 0),
-            "distance": float(dist),
+            "distance": distance,
         })
     return passages
 
@@ -39,7 +47,11 @@ if __name__ == "__main__":
     import sys as _sys
     question = " ".join(_sys.argv[1:]) or "Qu'est-ce que le machine learning ?"
     print(f"Question : {question}\n")
-    for i, p in enumerate(chercher(question), 1):
-        print(f"[{i}] {p['source']} (page {p['page']}, distance {p['distance']:.3f})")
-        print(f"    {p['texte'][:200]}...")
-        print()
+    passages = chercher(question)
+    if not passages:
+        print(f"Aucun passage sous le seuil de {SEUIL_DISTANCE}.")
+    else:
+        for i, p in enumerate(passages, 1):
+            print(f"[{i}] {p['source']} (page {p['page']}, distance {p['distance']:.3f})")
+            print(f"    {p['texte'][:200]}...")
+            print()
