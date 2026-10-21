@@ -1,0 +1,21 @@
+question,source_attendue,page_attendue
+"Qu'est-ce que la régularisation ?",cours_deep_learning.pdf,33
+"Qu'est-ce que le dropout ?",cours_deep_learning.pdf,36
+"Qu'est-ce que la malédiction de la profondeur ?",cours_deep_learning.pdf,27
+"Qu'est-ce que la pénalisation de la perte ?",cours_deep_learning.pdf,33
+"Qu'est-ce que le risque empirique ?",cours_deep_learning.pdf,31
+"Qui est Spider-Man ?",Marvel.pdf,1
+"Quand Marvel a-t-il été créé ?",Marvel.pdf,1
+"Qui sont les antagonistes de Marvel ?",Marvel.pdf,1
+"Qu'est-ce que Streamlit ?",guide_streamlit.pdf,2
+"Comment fonctionne Streamlit ?",guide_streamlit.pdf,2
+"Qu'est-ce qu'un composant Streamlit ?",guide_streamlit.pdf,67
+"Qu'est-ce que le machine learning ?",cours_ml.pdf,1
+"Qu'est-ce que la sémantique ?",cours_nlp.pdf,17
+"Qu'est-ce que le NLP ?",cours_nlp.pdf,1
+"Comment fonctionne un réseau de neurones ?",cours_deep_learning.pdf,31
+"Quelle est la capitale du Japon ?",,
+"Qui a écrit Les Misérables ?",,
+"Qu'est-ce que la photosynthèse ?",,
+"Quelle est la recette de la tarte tatin ?",,
+"Quel est le président de la France en 2026 ?",,

@@ -39,7 +39,7 @@ Ce seuil évite d'envoyer au LLM des passages hors sujet, et rend le refus hors 
 ### Test 3 — Question sur un troisième document
 
 - **Question** : « Qui est Spider-Man ? »
-- **Passages récupérés** : 2 passages de `Marvel.pdf` (distances 0.394 et 0.478), puis 2 passages d'autres documents (bruit).
+- **Passages récupérés** : 2 passages de `Marvel.pdf` (distances 0.394 et 0.478), puis 1 passage de `cours_deep_learning.pdf` (0.542).
 - **Verdict** : ✅ le bon document est classé premier, avec une distance très basse.
 
 ### Test 4 — Question hors corpus
@@ -47,21 +47,29 @@ Ce seuil évite d'envoyer au LLM des passages hors sujet, et rend le refus hors 
 - **Question** : « Qu'est-ce que le RAG ? »
 - **Résultat** : le LLM refuse explicitement de répondre (« La réponse ne se trouve pas dans les extraits fournis »), en citant les extraits consultés.
 - **Verdict** : ✅ pas d'hallucination, même avec 4 passages hors sujet en contexte.
-### Test 5 — Question hors corpus (avec seuil)
 
-- **Question** : « Quelle est la capitale du Japon ? »
-- **Résultat** : **0 passage** sous le seuil, `generate.py` répond « Aucun document pertinent trouvé » **sans appeler le LLM**.
-- **Verdict** : ✅ refus déterministe, pas d'hallucination, économie d'appel LLM.
+### Évaluation quantitative (20 questions)
+
+Nous avons construit un jeu de 20 questions (`data/questions_reference.csv`) : 15 dans le corpus, 5 hors corpus. Le script `src/evaluate_rag.py` mesure deux métriques :
+- **Context Precision@3** : le bon document est-il dans le top 3 ?
+- **Taux de refus** : les questions hors corpus renvoient-elles 0 passage ?
+
+| Seuil | Context Precision@3 | Taux de refus |
+|-------|---------------------|---------------|
+| 0.50 | 9/15 = 60,0 % | 5/5 = 100 % |
+| **0.55** | **11/15 = 73,3 %** | 3/5 = 60 % |
+
+**Choix : 0.55.** Il préserve la précision (73,3 %), au prix de 2 questions hors corpus qui passent le seuil et sont refusées par le LLM (comportement à deux niveaux : le seuil filtre le plus évident, le LLM filtre le reste). À 0.50, le refus est parfait (100 %), mais 2 bons passages sont perdus (précision 60 %).
 
 ### Conclusion
 
-Le retrieval distingue **3 documents différents** (`cours_deep_learning.pdf`, `guide_streamlit.pdf`, `Marvel.pdf`) selon la question, et le LLM **refuse** de répondre quand l'information n'est pas dans le corpus. Le nettoyage des pages non informatives a supprimé 19 pages de bruit.
+Le retrieval distingue **3 documents différents** (`cours_deep_learning.pdf`, `guide_streamlit.pdf`, `Marvel.pdf`) selon la question, et le LLM **refuse** de répondre quand l'information n'est pas dans le corpus. Le nettoyage des pages non informatives a supprimé 19 pages de bruit, et le seuil de similarité à 0.55 rend le refus hors corpus déterministe pour les cas les plus évidents.
 
 ## Limites observées
 
 1. **Découpage naïf** : `RecursiveCharacterTextSplitter` avec 512 tokens peut couper au milieu d'une phrase. Un découpage sémantique améliorerait la cohérence.
 2. **Embedding générique** : `all-MiniLM-L6-v2` est multilingue mais généraliste. Un modèle spécialisé (par ex. `bge-m3`) améliorerait la précision.
-3. **Pas de seuil de distance** : même les passages à 0.6 (médiocres) sont renvoyés au LLM. Un seuil de 0.55 éliminerait le bruit (par exemple, les passages 3 et 4 de « Qui est Spider-Man ? »).
+3. **Seuil de similarité fixe** : 0.55 fonctionne bien sur ce corpus, mais un seuil adaptatif (selon la longueur de la question ou le nombre de documents) serait plus robuste. Les 2 questions hors corpus qui passent le seuil sont refusées par le LLM, pas par le seuil.
 4. **Pas de reranking** : les 4 passages récupérés sont fournis au LLM dans l'ordre de distance. Un reranker (CrossEncoder) améliorerait la sélection.
 5. **Corpus sans définition du RAG** : la question « Qu'est-ce que le RAG ? » est hors corpus, ce qui est un bon test de refus, mais empêche de valider la définition.
 
