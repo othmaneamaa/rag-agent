@@ -1,24 +1,37 @@
+name: CI
 on: [push, pull_request]
 
 jobs:
   rag:
     runs-on: ubuntu-24.04
+    env:
+      PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu   # torch en version CPU, bien plus léger
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
-
-      - name: Installer les dependances de test
+        with: { python-version: "3.11", cache: pip }
+      - name: Modèle d'embedding en cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ hashFiles('rag_agent/config.py') }}
+      - name: Environnement virtuel et dépendances
+        run: python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt -r requirements-dev.txt
+      - name: ruff
+        run: . .venv/bin/activate && ruff check .
+      - name: mypy
+        run: . .venv/bin/activate && mypy rag_agent api ui src
+      - name: Index du corpus d'exemple, et son évaluation
         run: |
-          python -m venv .venv
           . .venv/bin/activate
-          pip install --upgrade pip
-          pip install pytest python-dotenv
-          pip install langchain-core langchain-text-splitters langchain-community pypdf groq
-
-      - name: Lancer les tests legers
+          python src/ingest.py --corpus exemple
+          python src/evaluate.py --corpus exemple
+      - name: Tests et couverture
+        run: . .venv/bin/activate && pytest -q --cov=api --cov=rag_agent --cov-report=term-missing --cov-fail-under=85
+      - name: Roue installée hors du dépôt
         run: |
-          . .venv/bin/activate
-          pytest -q tests/test_chunking.py tests/test_generation.py tests/test_ui.py
+          . .venv/bin/activate && python -m build --wheel
+          python -m venv /tmp/roue && /tmp/roue/bin/pip install dist/*.whl
+          cd /tmp && /tmp/roue/bin/rag --version
+          RAG_INDEX="$GITHUB_WORKSPACE/models/chroma" /tmp/roue/bin/rag search "Quand Antoine Lavoisier est-il né ?" -k 1

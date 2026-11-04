@@ -1,0 +1,6 @@
+# Outils de qualité et de packaging, comme dans sentiment-app.
+pytest-cov==7.1.0
+ruff==0.16.9
+mypy==2.3.1
+pre-commit<4
+build==1.2.2.post1

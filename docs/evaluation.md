@@ -1,81 +1,81 @@
-# Évaluation du RAG
+# Évaluation de l'agent
 
-## Ce qu'on mesure
+> Toutes les valeurs viennent de nos exécutions : `python src/evaluate.py` et `python src/courbe_seuil.py` sur le corpus PIAF complet, avec les versions épinglées de `requirements.txt`.
 
-Le cadre CLEAR-RAG propose cinq dimensions. Nous en retenons trois,
-mesurables sur notre projet étudiant.
+## Ce qu'on mesure, et pourquoi c'est possible sans annoter
 
-| Dimension | Métrique | Comment on la mesure |
+Chaque question de PIAF a été écrite par une personne qui lisait un paragraphe précis. On sait donc, pour les 3 835 questions, quel est le bon paragraphe : la recherche se mesure automatiquement, comme le F1 de sentiment-app se mesure sur son jeu de test.
+
+| Dimension | Métrique | Lecture |
 | --- | --- | --- |
-| **Retrieval Quality** | Distance cosinus du bon passage | Distance du 1er résultat pour une question dont on connaît la source |
-| **Answer Faithfulness** | Taux de refus hors corpus | Le LLM refuse-t-il de répondre quand l'info n'est pas dans les passages ? |
-| **Citation Quality** | Présence de la source | Chaque réponse cite-t-elle au moins une source ? |
+| Qualité de la recherche | rappel@1, rappel@3 | Part des questions dont le bon paragraphe est 1er, ou dans les 3 premiers |
+| | MRR@10 | Moyenne de 1/rang du bon paragraphe (1 s'il est 1er, 0,5 s'il est 2e, 0 s'il n'est pas dans les 10) |
+| Refus | Refus hors corpus | Part des 30 questions de `data/questions_hors_corpus.csv` sans aucun passage sous le seuil |
+| | Réponses | Part des questions du corpus qui gardent au moins un passage sous le seuil |
 
-### Nettoyage du corpus
+## Le choix du modèle d'embedding
 
-Avant l'indexation, `rag/chunking.py` ignore les pages non informatives (garde, remerciements, liens LinkedIn, bibliographie). Sur les 158 pages des 5 PDF, **19 pages** ont été ignorées, laissant **139 pages** et **508 passages** indexés (au lieu de 532).
+Même corpus, mêmes 3 835 questions, recherche exacte :
 
-### Seuil de similarité
+| Modèle | rappel@1 | rappel@3 | MRR@10 |
+| --- | --- | --- | --- |
+| `all-MiniLM-L6-v2` (version 0.1.0) | 0,340 | 0,481 | 0,423 |
+| TF-IDF, mots et paires de mots (référence sans réseau de neurones) | 0,613 | 0,763 | 0,697 |
+| `paraphrase-multilingual-MiniLM-L12-v2` | 0,448 | 0,611 | 0,546 |
+| **`intfloat/multilingual-e5-small`** | **0,668** | **0,832** | **0,757** |
 
-`src/retrieve.py` filtre les passages dont la distance cosinus dépasse **0.55**. Ce seuil a été calibré sur le corpus :
-- 0.259 (régularisation), 0.394 (Spider-Man), 0.516 (Streamlit) → passages pertinents, conservés ;
-- 0.542 à 0.611 (bruit, malédiction de la profondeur) → filtrés ;
-- > 0.55 pour une question hors corpus (capitale du Japon) → **aucun passage**, donc refus déterministe sans appel LLM.
+Le modèle de la version 0.1.0 a été entraîné surtout sur de l'anglais : sur des questions en français, il fait moins bien qu'une simple recherche par mots-clés. `multilingual-e5-small` est le seul à battre nettement TF-IDF. Il demande un préfixe `query: ` devant les questions et `passage: ` devant les paragraphes ; `rag_agent/index.py` les ajoute.
 
-Ce seuil évite d'envoyer au LLM des passages hors sujet, et rend le refus hors corpus **déterministe** (ce n'est plus le LLM qui décide, c'est le code).
+**Seuil d'acceptation** : rappel@3 ≥ 0,80 (`SEUIL_RAPPEL_3` dans `src/evaluate.py`). Atteint : 0,832.
 
-### Test 1 — Question sur un document spécifique
+### Un défaut trouvé en route : la recherche approchée
 
-- **Question** : « Qu'est-ce que la régularisation ? »
-- **Passages récupérés** : 4 passages de `cours_deep_learning.pdf` (distances 0.259 à 0.527).
-- **Verdict** : ✅ distance très basse (0.259), le bon document et la bonne page.
+Avec les réglages par défaut de ChromaDB 0.5 (recherche HNSW, `ef` = 10), le rappel@3 tombait à 0,803, et deux évaluations successives ne donnaient pas les mêmes chiffres : la recherche approchée manquait des voisins. Avec `hnsw:search_ef` = 200, sur 761 passages, la recherche redevient exacte et reproductible, et retrouve les chiffres du calcul exact (0,832).
 
-### Test 2 — Question sur un autre document
+## Le seuil de distance
 
-- **Question** : « Comment fonctionne Streamlit ? »
-- **Passages récupérés** : 4 passages de `guide_streamlit.pdf` (distances 0.516 à 0.559).
-- **Verdict** : ✅ le bon document, avec la définition de Streamlit en passage 2.
+`python src/courbe_seuil.py`, top 4 :
 
-### Test 3 — Question sur un troisième document
+| Seuil | Répond | Bon passage gardé | Refus hors corpus |
+| --- | --- | --- | --- |
+| 0,16 | 60,6 % | 54,1 % | 100,0 % |
+| 0,17 | 73,6 % | 64,8 % | 93,3 % |
+| 0,18 | 85,9 % | 74,2 % | 76,7 % |
+| **0,19** | **95,1 %** | **80,9 %** | **66,7 %** |
+| 0,20 | 98,6 % | 84,2 % | 36,7 % |
+| 0,22 | 100,0 % | 85,4 % | 3,3 % |
 
-- **Question** : « Qui est Spider-Man ? »
-- **Passages récupérés** : 2 passages de `Marvel.pdf` (distances 0.394 et 0.478), puis 1 passage de `cours_deep_learning.pdf` (0.542).
-- **Verdict** : ✅ le bon document est classé premier, avec une distance très basse.
+Les distances se chevauchent : pour 90 % des questions du corpus, le passage le plus proche est entre 0,106 et 0,190 (5e et 95e centiles) ; pour les 30 questions hors corpus, entre 0,166 et 0,226. Aucun seuil ne sépare tout.
 
-### Test 4 — Question hors corpus
+**Choix : 0,19.** L'agent répond encore à 95 % des questions légitimes, et refuse deux tiers des questions hors corpus sans même appeler le modèle de langage. À 0,17, le refus hors corpus serait presque parfait (93 %), mais l'agent ne répondrait plus qu'à 74 % des questions légitimes. Les questions hors corpus qui passent le seuil rencontrent le second garde-fou : le prompt impose au modèle de répondre `HORS_CORPUS` si les extraits ne contiennent pas la réponse, et le code transforme ce mot en refus.
 
-- **Question** : « Qu'est-ce que le RAG ? »
-- **Résultat** : le LLM refuse explicitement de répondre (« La réponse ne se trouve pas dans les extraits fournis »), en citant les extraits consultés.
-- **Verdict** : ✅ pas d'hallucination, même avec 4 passages hors sujet en contexte.
+Les 10 questions hors corpus qui passent le seuil, avec le sujet le plus proche :
 
-### Évaluation quantitative (20 questions)
+| Distance | Question | Sujet le plus proche |
+| --- | --- | --- |
+| 0,166 | Quelle est la meilleure crème solaire pour les enfants ? | Bronzage |
+| 0,166 | Combien de joueurs compte une équipe de rugby ? | Jeux olympiques d'été de 2016 |
+| 0,172 | Quels sont les symptômes du diabète ? | Syndrome d'apnées du sommeil |
+| 0,176 | Qu'est-ce que la photosynthèse ? | Mycélium |
+| 0,177 | Quelle est la différence entre un virus informatique et un ver ? | Virus coxsackie B |
+| 0,179 | Quelle est la capitale de l'Australie ? | Rome |
+| 0,179 | Quelle est la recette du couscous ? | Hongrie |
+| 0,181 | Combien de temps faut-il cuire des pâtes al dente ? | France |
+| 0,184 | Comment calculer un pourcentage ? | Couleur du Web |
+| 0,189 | Comment entretenir un aquarium d'eau douce ? | Événement Azolla |
 
-Nous avons construit un jeu de 20 questions (`data/questions_reference.csv`) : 15 dans le corpus, 5 hors corpus. Le script `src/evaluate_rag.py` mesure deux métriques :
-- **Context Precision@3** : le bon document est-il dans le top 3 ?
-- **Taux de refus** : les questions hors corpus renvoient-elles 0 passage ?
+Ce sont des voisinages de thème (bronzage et crème solaire, virus et virus informatique), pas des réponses : c'est exactement le cas que le second garde-fou doit traiter.
 
-| Seuil | Context Precision@3 | Taux de refus |
-|-------|---------------------|---------------|
-| 0.50 | 9/15 = 60,0 % | 5/5 = 100 % |
-| **0.55** | **11/15 = 73,3 %** | 3/5 = 60 % |
+## Limites mesurées
 
-**Choix : 0.55.** Il préserve la précision (73,3 %), au prix de 2 questions hors corpus qui passent le seuil et sont refusées par le LLM (comportement à deux niveaux : le seuil filtre le plus évident, le LLM filtre le reste). À 0.50, le refus est parfait (100 %), mais 2 bons passages sont perdus (précision 60 %).
-
-### Conclusion
-
-Le retrieval distingue **3 documents différents** (`cours_deep_learning.pdf`, `guide_streamlit.pdf`, `Marvel.pdf`) selon la question, et le LLM **refuse** de répondre quand l'information n'est pas dans le corpus. Le nettoyage des pages non informatives a supprimé 19 pages de bruit, et le seuil de similarité à 0.55 rend le refus hors corpus déterministe pour les cas les plus évidents.
-
-## Limites observées
-
-1. **Découpage naïf** : `RecursiveCharacterTextSplitter` avec 512 tokens peut couper au milieu d'une phrase. Un découpage sémantique améliorerait la cohérence.
-2. **Embedding générique** : `all-MiniLM-L6-v2` est multilingue mais généraliste. Un modèle spécialisé (par ex. `bge-m3`) améliorerait la précision.
-3. **Seuil de similarité fixe** : 0.55 fonctionne bien sur ce corpus, mais un seuil adaptatif (selon la longueur de la question ou le nombre de documents) serait plus robuste. Les 2 questions hors corpus qui passent le seuil sont refusées par le LLM, pas par le seuil.
-4. **Pas de reranking** : les 4 passages récupérés sont fournis au LLM dans l'ordre de distance. Un reranker (CrossEncoder) améliorerait la sélection.
-5. **Corpus sans définition du RAG** : la question « Qu'est-ce que le RAG ? » est hors corpus, ce qui est un bon test de refus, mais empêche de valider la définition.
+1. **Les questions qui ne se comprennent qu'avec leur paragraphe.** 349 questions (9,1 %) ne retrouvent pas leur paragraphe dans les 10 premiers. Beaucoup ont été écrites en lisant le texte : « De quelle organisation fait-elle partie ? », « qui dédouble la représentation ». Sans le paragraphe, personne ne pourrait y répondre ; c'est une limite du jeu autant que du modèle.
+2. **Les questions courtes.** Rappel@3 de 0,763 pour les questions de 8 mots ou moins (1 522 questions), contre 0,877 au-delà (2 313 questions).
+3. **Les sujets aux paragraphes voisins.** Les batailles et les sièges sont les moins bien servis : Siège de Gibraltar 0,44, Bataille de Savenay 0,48, Guerre d'indépendance espagnole 0,52 (25 questions chacun). Leurs paragraphes partagent le même vocabulaire militaire. À l'opposé, Best-seller, Bourse de Brême et Calendrier hégirien sont à 1,00.
+4. **Le refus est mesuré sur 30 questions seulement**, écrites par nous : 66,7 % est un ordre de grandeur, pas une mesure précise.
+5. **La rédaction n'est pas mesurée automatiquement.** La fidélité des réponses de Groq aux extraits et la justesse des citations se vérifient à la main ; les tests vérifient seulement que le prompt borne le modèle aux extraits et que le marqueur de refus est respecté.
 
 ## Ce qu'on ferait avec plus de temps
 
-- Mesurer un **MRR** sur 20 questions de référence
-- Tester plusieurs modèles d'embedding
-- Ajouter un **reranker** (par ex. `cross-encoder/ms-marco-MiniLM-L-6-v2`)
-- Comparer RAG vs LLM seul sur les mêmes questions
+- Un modèle plus grand (`multilingual-e5-base`, `bge-m3`) et un reranker (cross-encoder) sur les 10 premiers passages, mesurés avec le même script.
+- Une recherche hybride, TF-IDF et embeddings : TF-IDF atteint déjà 0,763 au rappel@3, et les mots exacts (noms propres, dates) pourraient compléter les embeddings. À mesurer avec le même script.
+- Un jeu de questions hors corpus plus grand, et une mesure de la fidélité des réponses générées.

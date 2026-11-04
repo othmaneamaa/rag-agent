@@ -1,252 +1,74 @@
-# Compte rendu — Agent de recherche documentaire (RAG)
+# Compte rendu : agent de recherche documentaire (RAG)
 
 **Binôme :** Othmane Amaadour (@othmaneamaa) & Mohcine Errachid (@mohcine00errachind)
 **Dépôt :** https://github.com/othmaneamaa/rag-agent
-**Date de remise :** 16 octobre 2026
-**Étiquette Git :** `rendu-final`
+**Version :** 0.2.0 (étiquette `v0.2.0`) ; la version 0.1.0 reste sous l'étiquette `rendu-final`
 
 ---
 
-## 1. Cadrage et besoin
+## 1. Ce qui a changé depuis la 0.1.0, et pourquoi
 
-### Le besoin métier
+La 0.1.0 indexait 5 PDF personnels, absents du dépôt : personne d'autre ne pouvait reconstruire l'index, rejouer l'évaluation, ni faire passer les tests de recherche, que la CI ignorait. La 0.2.0 reprend le projet sur deux bases :
 
-Permettre à un utilisateur d'interroger en **langage naturel** un corpus
-hétérogène de documents (PDF, articles, pages internes) et d'obtenir des
-réponses **sourcées**, c'est-à-dire accompagnées des passages exacts dont
-elles sont tirées.
+- **un corpus public et reproductible** : le jeu Piaf (French Questions & Answers) de Kaggle, licence CC0, téléchargé en une commande ;
+- **l'architecture de sentiment-app**, le projet de cours : données, scripts, paquet, API, interface, tests, CI, roue.
 
-### La grille de décision
+## 2. Le corpus
 
-Nous avons appliqué la grille du cours pour choisir l'approche :
+761 paragraphes de Wikipédia en français, sur 191 sujets, et 3 835 questions écrites par des humains, chacune sur un paragraphe précis. Un paragraphe fait de 500 à 996 caractères : on l'indexe tel quel, sans le découper, ce qui garde chaque citation lisible et sans phrase coupée.
 
-| Critère | Réponse | Commentaire |
+Les questions changent la nature de l'évaluation. En 0.1.0, nous avions écrit 20 questions à la main ; ici, chaque question connaît son paragraphe, et la recherche se mesure sur 3 835 cas, comme le F1 de sentiment-app sur son jeu de test.
+
+Le corpus complet reste hors de Git (`data/piaf/`), comme les données de sentiment-app ; un extrait de 10 sujets (81 paragraphes, 417 questions) est versionné pour les tests et la CI, ce que la licence CC0 permet.
+
+## 3. Architecture
+
+| Couche | Dossier | Rôle |
 | --- | --- | --- |
-| (a) Données étiquetées ? | **Non** | Pas d'historique de questions/réponses validées sur ce corpus. |
-| (b) Vérifiabilité ? | **Exigée** | Chaque réponse doit citer la source exacte (fichier + page). |
-| (c) Coût par requête ? | **Modéré** | Un appel LLM + une recherche vectorielle par question. |
-| (d) Conséquence d'une erreur ? | **Modérée** | Une réponse fausse est détectable via la source citée. |
+| Données | `data/` | Extrait versionné, 30 questions hors corpus ; PIAF complet hors Git |
+| Scripts | `src/` | `telecharger.py`, `corpus_exemple.py`, `ingest.py`, `evaluate.py`, `courbe_seuil.py` |
+| Paquet | `rag_agent/` | `corpus`, `index`, `generation`, `llm`, `evaluation`, `config`, la commande `rag` |
+| Service | `api/` | FastAPI : `/health`, `/search`, `/ask` |
+| Interface | `ui/` | Streamlit et son client HTTP |
 
-**Approche retenue : RAG** (Retrieval-Augmented Generation).
-
-Justification :
-- Pas de règles métier car la logique n'est ni connue ni stable (a).
-- Pas de ML supervisé car il n'y a pas d'étiquettes (a).
-- RAG car la réponse doit être **tirée de documents et citée** (b).
-- Le génératif seul hallucinerait : il ne connaît pas nos documents.
-
----
-
-## 2. Architecture technique
-
-### Vue d'ensemble
-
-    Question → Embedding → Recherche vectorielle (top-k)
-             → Contexte fourni au LLM → Réponse + citations
-
-Trois étapes :
-
-1. **Retrieval** — la question est encodée en vecteur, puis comparée
-   aux vecteurs des passages indexés dans ChromaDB.
-2. **Augmentation** — les k passages les plus proches sont insérés
-   dans un prompt qui impose au LLM de ne répondre **qu'à partir
-   d'eux**.
-3. **Generation** — le LLM (Groq, `openai/gpt-oss-120b`) rédige une
-   réponse en citant les sources.
-
-### Structure du dépôt
-
-    rag-agent/
-    ├── data/pdfs/               corpus (non versionné)
-    ├── src/
-    │   ├── config.py            configuration centrale
-    │   ├── ingest.py            ingestion : PDF → passages → vecteurs
-    │   ├── retrieve.py          recherche vectorielle
-    │   └── generate.py          génération sourcée
-    ├── rag/
-    │   ├── chunking.py          chargement PDF + découpage
-    │   ├── embeddings.py        modèle d'embedding local
-    │   ├── vector_store.py      ChromaDB
-    │   └── llm.py               wrapper Groq
-    ├── ui/
-    │   ├── app.py               interface Streamlit
-    │   └── helpers.py           logique testable
-    ├── tests/                   13 tests pytest
-    ├── models/chroma/           index vectoriel (non versionné)
-    ├── docs/                    cadrage, évaluation, compte rendu
-    └── .github/workflows/       intégration continue
-
-### Les trois artefacts, pas un
-
-Comme aux TP1-TP3, nous distinguons :
+Trois règles reprises de sentiment-app : l'API ne construit rien, elle ouvre l'index au démarrage et refuse de démarrer sans lui ; l'index ne va jamais dans Git, il se reconstruit ; la page passe par l'API, jamais par l'index.
 
 | Artefact | Dans Git ? | Raison |
 | --- | --- | --- |
-| Le code | Oui | C'est le travail |
-| L'environnement (`.venv/`) | Non | Reconstructible via `pip install` |
-| Le corpus (`data/pdfs/*.pdf`) | Non | Volumineux, fourni à part |
-| L'index vectoriel (`models/chroma/`) | Non | Reconstructible via `python src/ingest.py` |
-| Les métriques et la doc | Oui | Ce sont les preuves |
+| Le code, les tests, la doc | Oui | C'est le travail |
+| L'extrait du corpus, les questions hors corpus | Oui | Petits, écrits ou choisis par nous, nécessaires à la CI |
+| `models/metrics.json` | Oui | C'est la preuve de la mesure |
+| PIAF complet, l'index, `.venv/`, `.env` | Non | Se reconstruisent, ou sont secrets |
 
----
+## 4. Les deux choix mesurés
 
-## 3. Choix du LLM et du RAG
+**Le modèle d'embedding.** Sur les 3 835 questions, le modèle de la 0.1.0 (`all-MiniLM-L6-v2`) ne retrouve le bon paragraphe dans les 3 premiers que pour 48,1 % des questions : moins bien qu'une recherche par mots-clés TF-IDF (76,3 %), parce qu'il a été entraîné surtout sur de l'anglais. Nous avons comparé quatre options et retenu `intfloat/multilingual-e5-small` : rappel@3 **0,832**, MRR@10 0,757 (`docs/evaluation.md`).
 
-### Pourquoi un LLM alors qu'on a déjà les PDF ?
+**Le seuil de refus.** Pour 90 % des questions du corpus, le passage le plus proche est entre 0,106 et 0,190 de distance ; pour les questions hors corpus, entre 0,166 et 0,226. Les deux se chevauchent. À **0,19**, l'agent répond à 95,1 % des questions légitimes et refuse deux tiers des questions hors corpus sans appeler Groq. Les autres rencontrent un second refus : le prompt impose `HORS_CORPUS` quand les extraits ne contiennent pas la réponse, et le code transforme ce mot en refus, au lieu de laisser le modèle formuler une excuse que l'interface ne saurait pas reconnaître.
 
-C'est la question centrale du projet. Un PDF est un **texte figé** : il ne
-comprend pas une question et ne peut pas la synthétiser. Deux cas :
+## 5. Tests et qualité
 
-- **Sans LLM** : la recherche vectorielle seule renvoie des passages
-  bruts. Utile, mais l'utilisateur doit lire, comprendre, synthétiser.
-- **Sans PDF** : un LLM seul (ChatGPT, Groq…) ne connaît pas nos documents.
-  Il **hallucine** une réponse plausible mais fausse.
+91 tests, en deux familles. La logique (seuil, refus, citations, contrat de l'API, codes d'erreur, client de l'interface, commande `rag`) est testée avec un encodeur de hachage et un faux modèle de langage : sans torch, sans clé Groq, en quelques secondes. Le vrai modèle est testé sur l'extrait versionné (`tests/test_modele.py`). La CI exécute tout, avec ruff, mypy et la couverture, puis construit la roue et l'essaie hors du dépôt.
 
-Le RAG combine les deux forces :
-- Le **PDF apporte la connaissance** (le LLM ne peut pas inventer).
-- Le **LLM apporte le langage** (il rédige une réponse lisible).
-- Ensemble, ils donnent une réponse **précise, rédigée et sourcée**.
+## 6. Ce qui a échoué en route
 
-### Pourquoi Groq plutôt qu'un LLM local
+1. **Le modèle d'embedding de la 0.1.0 était inadapté au français** : 0,481 au rappel@3, sous TF-IDF. Nous ne l'aurions pas vu sans les 3 835 questions de PIAF.
+2. **La recherche approchée de ChromaDB manquait des voisins.** Avec les réglages par défaut, le rappel@3 tombait de 0,832 à 0,803, et deux évaluations ne donnaient pas les mêmes chiffres. Corrigé en élargissant la recherche HNSW (`hnsw:search_ef` = 200).
+3. **L'ingestion doublait l'index** : `ingest.py` ajoutait les passages sans vider la collection. Corrigé : l'index est reconstruit.
+4. **Le seuil se lisait à l'import** : changer le réglage n'avait pas d'effet sur `repondre()`. Un test de la commande `rag ask` l'a révélé.
+5. **Kaggle et Hugging Face bloqués** depuis notre environnement de travail : il a fallu autoriser leurs domaines. Le téléchargement d'un jeu public de Kaggle, lui, ne demande pas de compte.
 
-Notre machine est un ultrabook i5-8365U (4 cœurs, 1.6 GHz, **sans GPU**).
-Un LLM local (Ollama, `llama3.2`) mettrait **30 s à 2 min** par réponse et
-ferait chauffer le PC. Groq fait tourner des LLM open source sur des puces
-spécialisées (LPU) :
+## 7. Limites
 
-| | Groq (API) | Ollama (local) |
-| --- | --- | --- |
-| Vitesse | 1-3 s | 15-60 s |
-| Téléchargement | Aucun | 400 Mo à 2 Go |
-| Chauffe PC | Aucune | Élevée |
-| Coût | Gratuit (1 000 req/j) | Gratuit |
+Les questions qui ne se comprennent qu'avec leur paragraphe (9,1 % ne le retrouvent pas dans les 10 premiers), les questions courtes, et les sujets aux paragraphes voisins (batailles, sièges) sont les moins bien servis. Le refus est mesuré sur 30 questions seulement, et la fidélité des réponses de Groq n'est pas mesurée automatiquement. Le détail est dans `docs/evaluation.md` et `docs/fiche-modele.md`.
 
-**Choix : Groq**, modèle `openai/gpt-oss-120b` (remplaçant officiel de
-`llama-3.3-70b-versatile`, retiré en août 2026).
+## 8. Ce qu'on ferait ensuite
 
----
+Un reranker sur les 10 premiers passages, une recherche hybride TF-IDF et embeddings, un jeu hors corpus plus grand, et une mesure de la fidélité des réponses générées. Chacun se mesure avec `src/evaluate.py`.
 
-## 4. Évaluation et limites
-
-### Résultats observés
-
-**Test 1 — Question dans le corpus**
-
-- Question : « Qu'est-ce que le RAG ? »
-- Passage récupéré : `cours_ml.pdf, page 1` (distance cosinus **0.697**)
-- Le bon passage est classé **premier** sur les 3 passages de l'index.
-- Réponse du LLM : ancrée dans l'extrait, avec citation `[cours_ml.pdf, page 1]`.
-- **Verdict** : ✅
-
-**Test 2 — Question hors corpus**
-
-- Question : « Quelle est la capitale du Japon ? »
-- Le LLM refuse explicitement de répondre (« les extraits fournis ne
-  contiennent pas cette information »).
-- **Verdict** : ✅ pas d'hallucination.
-
-**Test 3 — Question ambiguë**
-
-- Question : « Comment fonctionne l'apprentissage ? »
-- Le LLM croise plusieurs passages et synthétise.
-- **Verdict** : ✅ réponse multi-sources.
-
-### Limites
-
-1. **Découpage naïf** : `RecursiveCharacterTextSplitter` avec 512 tokens
-   peut couper au milieu d'une phrase. Un découpage sémantique
-   améliorerait la cohérence.
-2. **Embedding générique** : `all-MiniLM-L6-v2` est multilingue mais
-   généraliste. Un modèle spécialisé (par ex. `bge-m3`) améliorerait
-   la précision.
-3. **Un seul document** dans le corpus de test (`cours_ml.pdf`).
-4. **Pas de reranking** : les 4 passages sont fournis au LLM dans
-   l'ordre de distance. Un reranker (CrossEncoder) améliorerait la
-   sélection.
-
----
-
-## 5. Ce qui a échoué
-
-Trois incidents notables, tous documentés :
-
-1. **Modèle Groq retiré (erreur 404)**. Nous avions codé en dur
-   `llama-3.3-70b-versatile`, retiré par Groq le 16 août 2026. Erreur :
-   `The model does not exist or you do not have access to it`.
-   Corrigé en basculant sur `openai/gpt-oss-120b`.
-
-2. **Import `langchain.text_splitter` obsolète**. LangChain 0.2 a éclaté
-   ses paquets ; l'import est maintenant dans `langchain_text_splitters`.
-   Corrigé en installant `langchain-text-splitters`.
-
-3. **CI rouge pendant plusieurs tentatives**. Les tests échouaient en
-   intégration continue car les imports en cascade tiraient `torch` et
-   `sentence-transformers` (800 Mo), non installés en CI. Corrigé en
-   rendant les imports **tardifs** dans `src/generate.py` et
-   `src/retrieve.py` — exactement le principe du TP3 (`ui/helpers.py`).
-
-4. **Push HTTP 408** sur les captures d'écran (comme au TP3). Corrigé
-   avec `git config --global http.postBuffer 524288000` et
-   `git config --global http.version HTTP/1.1`.
-
----
-
-## 6. Ce qu'on ferait autrement
-
-1. **Découpage sémantique** plutôt que par caractères : utiliser
-   `SemanticChunker` ou un découpage basé sur les titres de section.
-
-2. **Reranker** : après la recherche vectorielle, faire passer les
-   10 premiers passages dans un CrossEncoder pour ne garder que les
-   3 ou 4 plus pertinents.
-
-3. **Évaluation systématique** : construire un jeu de 20 questions de
-   référence, mesurer un MRR (Mean Reciprocal Rank) et un taux de
-   refus correct.
-
-4. **Multi-documents** : tester sur un corpus plus large (10-20 PDF)
-   pour éprouver la recherche vectorielle à l'échelle.
-
-5. **Cache des réponses** : mettre en cache les questions fréquentes
-   pour économiser le quota Groq.
-
----
-
-## 7. Résultats et bilan
-
-| Indicateur | Valeur |
-| --- | --- |
-| Passages indexés (corpus de test) | 3 |
-| Modèle d'embedding | `all-MiniLM-L6-v2` |
-| Taille des passages | 512 tokens, chevauchement 50 |
-| Modèle LLM | `openai/gpt-oss-120b` (Groq) |
-| Temps de réponse moyen | ~2 secondes |
-| Tests pytest (local) | **13 passed** |
-| Tests pytest (CI) | **10 passed** en 29 s |
-| CI GitHub Actions | **Verte** ✅ |
-
-### Ce que le projet démontre
-
-- Un RAG complet, fonctionnel, avec citations sourcées.
-- Une architecture séparée (rag / src / ui / tests) qui facilite les
-  tests et l'évolution.
-- Une intégration continue qui rejoue les tests à chaque push.
-- Une documentation du **pourquoi** (pas seulement du **comment**).
-
----
-
-## 8. Répartition du travail
+## 9. Répartition du travail
 
 | Membre | Contributions |
 | --- | --- |
-| **Othmane Amaadour** | Structure du dépôt, ingestion (`chunking.py`, `embeddings.py`, `vector_store.py`), configuration Groq, génération sourcée, CI GitHub Actions |
-| **Mohcine Errachid** | Interface Streamlit (`ui/app.py`, `ui/helpers.py`), tests pytest, documentation (`evaluation.md`, fiche de cadrage), rédaction du compte rendu |
-
-Le travail a été mené en binôme, avec des points de synchronisation
-réguliers sur l'architecture et les choix techniques. Chaque membre a
-contribué au dépôt Git (vérifiable avec `git shortlog -sn --all`).
-
----
-
-*Version remise le 16 octobre 2026, figée par l'étiquette Git
-`rendu-final`.*
+| **Othmane Amaadour** | *À compléter par le binôme* |
+| **Mohcine Errachid** | *À compléter par le binôme* |
