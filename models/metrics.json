@@ -1,0 +1,17 @@
+{
+  "source": "piaf",
+  "date": "2026-11-04",
+  "modele_embedding": "intfloat/multilingual-e5-small",
+  "n_passages": 761,
+  "n_questions": 3835,
+  "rappel_1": 0.668,
+  "rappel_3": 0.832,
+  "mrr_10": 0.757,
+  "top_k": 4,
+  "seuil_distance": 0.19,
+  "repond": 0.951,
+  "bon_passage_garde": 0.809,
+  "n_hors_corpus": 30,
+  "refus_hors_corpus": 0.667,
+  "seuil_rappel_3": 0.8
+}

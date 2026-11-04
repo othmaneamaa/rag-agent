@@ -1,10 +1,23 @@
+# Environnement et caches : se reconstruisent
 .venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+*.egg-info/
+dist/
+build/
+
+# Secrets : jamais dans Git
 .env
-models/chroma/
-data/pdfs/*.pdf
-data/articles/*.txt
+
+# Le corpus Kaggle et l'index : se reconstruisent (python src/telecharger.py, python src/ingest.py)
+data/piaf/
+models/*
+!models/.gitkeep
+!models/metrics.json
+
 .DS_Store
 Thumbs.db
